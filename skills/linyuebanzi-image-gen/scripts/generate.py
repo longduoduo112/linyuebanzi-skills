@@ -137,8 +137,11 @@ def _build_create_payload(provider: str, prompt: str, mode: str, images: list[st
 def _parse_task_id(provider: str, resp: dict) -> str | None:
     if provider == "mulerun":
         return resp["body"]["task_info"]["id"]
-    # apimart
-    return resp["body"]["data"]["id"]
+    # apimart: {"code":200,"data":[{"task_id":"task_xxx","status":"submitted"}]}
+    data = resp["body"].get("data")
+    if isinstance(data, list) and data:
+        return data[0].get("task_id")
+    return None
 
 
 def _build_poll_url(provider: str, task_id: str) -> str:
