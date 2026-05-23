@@ -1,0 +1,545 @@
+#!/usr/bin/env python3
+"""
+通用图像生成器
+调用 MuleRun Nano Banana 2 API,支持 generation(纯文本生图)和 edit(带参考图修图)两种模式。
+单张用 CLI 参数,批量用 manifest JSON。
+
+用法:
+    # 单张生图
+    python generate.py --mode generation --prompt "..." --name-tag diagram-001 --output-dir ./out
+
+    # 单张修图
+    python generate.py --mode edit --prompt "..." --images "https://..." --name-tag cover --output-dir ./out
+
+    # 从文件读 prompt
+    python generate.py --mode generation --prompt-file ./prompt.txt --output-dir ./out
+
+    # 批量(串行)
+    python generate.py --manifest ./batch.json --output-dir ./out
+
+    # 批量(并行)
+    python generate.py --manifest ./batch.json --output-dir ./out --parallel
+
+环境变量:
+    MULERUN_API_KEY  必填,MuleRun 的 Bearer token
+
+Manifest JSON 格式:
+    {
+      "mode": "generation",
+      "aspect_ratio": "16:9",
+      "resolution": "2K",
+      "items": [
+        {"id": "img-001", "prompt": "..."},
+        {"id": "img-002", "prompt": "...", "images": ["https://..."]}
+      ]
+    }
+
+产出:
+    单张: {name-tag}-{timestamp}.png / .txt / .json
+    批量: {id}.png / {id}.txt / {id}.json + _run_metadata.json
+"""
+
+import argparse
+import json
+import os
+import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from pathlib import Path
+
+import urllib.request
+import urllib.error
+
+# ============================================================
+# 配置
+# ============================================================
+
+API_BASE = "https://api.mulerun.com/vendors/google/v1/nano-banana-2"
+
+DEFAULT_ASPECT_RATIO = "16:9"
+DEFAULT_RESOLUTION = "2K"
+
+POLL_INTERVAL = 5
+POLL_MAX_TIMES = 36  # 3 分钟
+
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/122.0.0.0 Safari/537.36"
+)
+
+# ============================================================
+
+
+def http_request(method: str, url: str, headers: dict, data: bytes | None = None) -> dict:
+    if "User-Agent" not in headers and "user-agent" not in headers:
+        headers = {**headers, "User-Agent": DEFAULT_USER_AGENT}
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            body = resp.read().decode("utf-8")
+            return {"status": resp.status, "body": json.loads(body) if body else {}}
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8") if e.fp else ""
+        return {"status": e.code, "body": err_body, "error": str(e)}
+    except Exception as e:
+        return {"status": 0, "body": "", "error": str(e)}
+
+
+def get_endpoint(mode: str) -> tuple[str, str]:
+    """返回 (create_url, poll_base_url)"""
+    path = "edit" if mode == "edit" else "generation"
+    return f"{API_BASE}/{path}", f"{API_BASE}/{path}"
+
+
+def create_task(prompt: str, api_key: str, mode: str, images: list[str] | None = None,
+                aspect_ratio: str = DEFAULT_ASPECT_RATIO, resolution: str = DEFAULT_RESOLUTION) -> str | None:
+    create_url, _ = get_endpoint(mode)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+    }
+    if mode == "edit" and images:
+        payload["images"] = images
+
+    resp = http_request("POST", create_url, headers, json.dumps(payload).encode("utf-8"))
+    if not (200 <= resp["status"] < 300):
+        print(f"    ✗ 创建任务失败,HTTP {resp['status']}")
+        print(f"      响应: {resp.get('body')}")
+        return None
+
+    return resp["body"]["task_info"]["id"]
+
+
+def poll_task(task_id: str, api_key: str, mode: str) -> dict | None:
+    _, poll_base = get_endpoint(mode)
+    headers = {"Authorization": f"Bearer {api_key}"}
+    url = f"{poll_base}/{task_id}"
+
+    for i in range(POLL_MAX_TIMES):
+        time.sleep(POLL_INTERVAL)
+        elapsed = (i + 1) * POLL_INTERVAL
+        resp = http_request("GET", url, headers)
+        if resp["status"] != 200:
+            print(f"    [第 {i+1} 次,已等 {elapsed}s] HTTP {resp['status']},继续等")
+            continue
+
+        task_info = resp["body"].get("task_info", {})
+        status = task_info.get("status", "unknown")
+
+        if status in ("completed", "succeeded"):
+            print(f"    ✓ 完成,耗时约 {elapsed}s")
+            return resp["body"]
+        elif status in ("failed", "error"):
+            print(f"    ✗ 任务失败: {json.dumps(resp['body'], ensure_ascii=False)}")
+            return None
+        else:
+            print(f"    [第 {i+1} 次,已等 {elapsed}s] 状态: {status}")
+
+    print(f"    ✗ 轮询超时({POLL_MAX_TIMES * POLL_INTERVAL}s)")
+    return None
+
+
+def download_image(url: str, save_path: Path) -> bool:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": DEFAULT_USER_AGENT})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            save_path.write_bytes(resp.read())
+        return True
+    except Exception as e:
+        print(f"    ✗ 下载失败: {e}")
+        print(f"      可手动打开: {url}")
+        return False
+
+
+def validate_item(item: dict) -> str | None:
+    missing = [f for f in ("id", "prompt") if f not in item or not item[f]]
+    if missing:
+        return f"缺少字段: {', '.join(missing)}"
+    return None
+
+
+def load_blocklist(blocklist_path: str | None) -> list[str] | None:
+    if not blocklist_path:
+        return None
+    p = Path(blocklist_path)
+    if not p.exists():
+        print(f"✗ blocklist 文件不存在: {p}")
+        sys.exit(1)
+    terms = [line.strip() for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not terms:
+        return None
+    print(f"✓ 加载 blocklist: {p} ({len(terms)} 个词)")
+    return terms
+
+
+def check_blocklist(prompt: str, terms: list[str] | None, context: str = "") -> None:
+    if not terms:
+        return
+    hits = [t for t in terms if t in prompt]
+    if not hits:
+        return
+    label = f" [{context}]" if context else ""
+    print(f"✗ 提示词{label}命中 blocklist 禁用词,已停止生成")
+    print(f"  命中的词: {', '.join(hits)}")
+    sys.exit(1)
+
+
+def process_single_item(
+    item: dict, output_dir: Path, api_key: str, mode: str,
+    aspect_ratio: str, resolution: str, index: int, total: int,
+) -> dict:
+    item_id = item["id"]
+    images = item.get("images")
+
+    print(f"\n[{index}/{total}] {item_id}")
+
+    task_id = create_task(item["prompt"], api_key, mode, images, aspect_ratio, resolution)
+    if not task_id:
+        return {"id": item_id, "status": "failed", "stage": "create"}
+    print(f"    ✓ task_id: {task_id}")
+
+    print(f"    → 轮询中")
+    result = poll_task(task_id, api_key, mode)
+    if not result:
+        return {"id": item_id, "status": "failed", "stage": "poll", "task_id": task_id}
+
+    result_images = result.get("images", [])
+    if not result_images:
+        return {"id": item_id, "status": "failed", "stage": "no_image", "task_id": task_id}
+
+    prompt_path = output_dir / f"{item_id}.txt"
+    prompt_path.write_text(item["prompt"], encoding="utf-8")
+
+    image_paths = []
+    for idx, image_url in enumerate(result_images):
+        suffix = f"-{idx}" if len(result_images) > 1 else ""
+        image_path = output_dir / f"{item_id}{suffix}.png"
+        print(f"    → 下载图片({idx+1}/{len(result_images)}) → {image_path.name}")
+        if not download_image(image_url, image_path):
+            return {"id": item_id, "status": "failed", "stage": "download", "task_id": task_id}
+        image_paths.append(str(image_path))
+        print(f"    ✓ {image_path.stat().st_size // 1024} KB")
+
+    meta_path = output_dir / f"{item_id}.json"
+    meta_path.write_text(
+        json.dumps({
+            "id": item_id,
+            "task_id": task_id,
+            "mode": mode,
+            "image_urls": result_images,
+            "local_images": image_paths,
+            "params": {"aspect_ratio": aspect_ratio, "resolution": resolution},
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    return {
+        "id": item_id, "status": "completed",
+        "image_urls": result_images, "local_images": image_paths,
+        "task_id": task_id,
+    }
+
+
+def poll_one(task_id: str, api_key: str, mode: str, item_id: str) -> tuple:
+    result = poll_task(task_id, api_key, mode)
+    return (item_id, result, task_id)
+
+
+def run_parallel(items: list, output_dir: Path, api_key: str, mode: str,
+                 aspect_ratio: str, resolution: str) -> list:
+    total = len(items)
+    print(f"\n{'='*60}")
+    print(f"并行模式 · {total} 项同时跑")
+    print(f"{'='*60}")
+
+    # Step 1: 串行创建所有任务
+    task_entries = []
+    for idx, item in enumerate(items, 1):
+        err = validate_item(item)
+        if err:
+            print(f"  [{idx}/{total}] ✗ 跳过: {err}")
+            task_entries.append((item.get("id", "?"), item, None, "validate"))
+            continue
+
+        item_id = item["id"]
+        print(f"  [{idx}/{total}] {item_id} → 创建任务")
+        task_id = create_task(item["prompt"], api_key, mode, item.get("images"), aspect_ratio, resolution)
+        if not task_id:
+            task_entries.append((item_id, item, None, "create"))
+        else:
+            print(f"    ✓ task_id={task_id}")
+            task_entries.append((item_id, item, task_id, None))
+
+    # Step 2: 并行轮询
+    print(f"\n  并行轮询中...")
+    poll_results = {}
+    with ThreadPoolExecutor(max_workers=len(task_entries)) as executor:
+        futures = {
+            executor.submit(poll_one, tid, api_key, mode, iid): iid
+            for iid, _, tid, _ in task_entries if tid
+        }
+        for future in as_completed(futures):
+            iid = futures[future]
+            try:
+                _, poll_result, _ = future.result()
+                poll_results[iid] = poll_result
+            except Exception as e:
+                print(f"    ✗ {iid} 轮询异常: {e}")
+                poll_results[iid] = None
+
+    # Step 3: 并行下载
+    print(f"\n  并行下载中...")
+    results = []
+    with ThreadPoolExecutor(max_workers=len(task_entries)) as executor:
+        futures = {}
+        for iid, item, tid, failed_stage in task_entries:
+            if failed_stage:
+                results.append({"id": iid, "status": "failed", "stage": failed_stage})
+                continue
+            if tid is None:
+                continue
+            futures[executor.submit(
+                _download_item, iid, item, poll_results.get(iid), output_dir, mode, api_key, tid,
+            )] = iid
+        for future in as_completed(futures):
+            iid = futures[future]
+            try:
+                results.append(future.result())
+            except Exception as e:
+                results.append({"id": iid, "status": "failed", "stage": "exception"})
+
+    return results
+
+
+def _download_item(iid: str, item: dict, poll_result: dict | None,
+                   output_dir: Path, mode: str, api_key: str, task_id: str) -> dict:
+    if not poll_result:
+        return {"id": iid, "status": "failed", "stage": "poll", "task_id": task_id}
+
+    images = poll_result.get("images", [])
+    if not images:
+        return {"id": iid, "status": "failed", "stage": "no_image", "task_id": task_id}
+
+    prompt_path = output_dir / f"{iid}.txt"
+    prompt_path.write_text(item["prompt"], encoding="utf-8")
+
+    image_paths = []
+    for idx, image_url in enumerate(images):
+        suffix = f"-{idx}" if len(images) > 1 else ""
+        image_path = output_dir / f"{iid}{suffix}.png"
+        if not download_image(image_url, image_path):
+            return {"id": iid, "status": "failed", "stage": "download", "task_id": task_id}
+        image_paths.append(str(image_path))
+
+    return {"id": iid, "status": "completed", "image_urls": images, "local_images": image_paths, "task_id": task_id}
+
+
+def run_single(mode: str, prompt: str, images: list[str] | None, name_tag: str,
+               output_dir: Path, api_key: str, aspect_ratio: str, resolution: str) -> None:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    file_stem = f"{name_tag}-{timestamp}"
+
+    item_id = file_stem
+    print(f"→ 创建{mode}任务")
+
+    task_id = create_task(prompt, api_key, mode, images, aspect_ratio, resolution)
+    if not task_id:
+        print("✗ 创建任务失败")
+        sys.exit(1)
+    print(f"✓ task_id: {task_id}")
+
+    print(f"→ 轮询中(最多等 {POLL_MAX_TIMES * POLL_INTERVAL}s)")
+    result = poll_task(task_id, api_key, mode)
+    if not result:
+        print("✗ 任务失败或超时")
+        sys.exit(1)
+
+    result_images = result.get("images", [])
+    if not result_images:
+        print("✗ API 成功但无图片")
+        sys.exit(1)
+
+    prompt_path = output_dir / f"{file_stem}.txt"
+    prompt_path.write_text(prompt, encoding="utf-8")
+
+    image_paths = []
+    for idx, image_url in enumerate(result_images):
+        suffix = f"-{idx}" if len(result_images) > 1 else ""
+        image_path = output_dir / f"{file_stem}{suffix}.png"
+        print(f"→ 下载图片({idx+1}/{len(result_images)}) → {image_path.name}")
+        if not download_image(image_url, image_path):
+            sys.exit(1)
+        image_paths.append(image_path)
+        print(f"✓ {image_path.stat().st_size // 1024} KB")
+
+    meta_path = output_dir / f"{file_stem}.json"
+    meta_path.write_text(
+        json.dumps({
+            "task_id": task_id,
+            "mode": mode,
+            "image_urls": result_images,
+            "params": {"aspect_ratio": aspect_ratio, "resolution": resolution},
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print()
+    print("=" * 60)
+    print(f"✓ 生成完毕,共 {len(result_images)} 张图片")
+    for p in image_paths:
+        print(f"  📁 {p}")
+    print(f"  📝 {prompt_path}")
+    print("=" * 60)
+    print(f"  不满意可改 .txt 提示词后重跑:")
+    print(f"  python {Path(__file__).name} --mode {mode} --prompt-file {prompt_path} --name-tag {name_tag}-v2")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="通用图像生成器 (MuleRun Nano Banana 2)")
+
+    # 单张模式参数
+    parser.add_argument("--mode", choices=["generation", "edit"], help="生成模式: generation(纯文本生图) 或 edit(带参考图)")
+    prompt_src = parser.add_mutually_exclusive_group()
+    prompt_src.add_argument("--prompt", type=str, help="提示词文本")
+    prompt_src.add_argument("--prompt-file", type=str, help="提示词文件路径")
+    prompt_src.add_argument("--manifest", type=str, help="批量 manifest JSON 路径")
+    parser.add_argument("--images", type=str, help="参考图 URL,多个用逗号分隔(edit 模式)")
+    parser.add_argument("--name-tag", type=str, default="image", help="单张模式文件命名前缀(默认 image)")
+    parser.add_argument("--output-dir", type=str, default="./output", help="输出目录(默认 ./output)")
+    parser.add_argument("--aspect-ratio", type=str, default=DEFAULT_ASPECT_RATIO, help=f"纵横比(默认 {DEFAULT_ASPECT_RATIO})")
+    parser.add_argument("--resolution", type=str, default=DEFAULT_RESOLUTION, help=f"分辨率(默认 {DEFAULT_RESOLUTION})")
+    parser.add_argument("--parallel", action="store_true", help="批量模式启用并行执行")
+    parser.add_argument("--blocklist", type=str, help="禁用词表文件路径(每行一个词,命中即停止)")
+    args = parser.parse_args()
+
+    # 加载 blocklist
+    blocklist = load_blocklist(args.blocklist)
+
+    # 鉴权
+    api_key = os.environ.get("MULERUN_API_KEY")
+    if not api_key:
+        print("✗ 未找到环境变量 MULERUN_API_KEY")
+        print("  请先设置: export MULERUN_API_KEY=sk-xxx")
+        sys.exit(1)
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 批量模式
+    if args.manifest:
+        manifest_path = Path(args.manifest)
+        if not manifest_path.exists():
+            print(f"✗ manifest 不存在: {manifest_path}")
+            sys.exit(1)
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as e:
+            print(f"✗ manifest JSON 解析失败: {e}")
+            sys.exit(1)
+
+        mode = manifest.get("mode", "generation")
+        aspect_ratio = manifest.get("aspect_ratio", args.aspect_ratio)
+        resolution = manifest.get("resolution", args.resolution)
+        items = manifest.get("items", [])
+
+        if not isinstance(items, list) or not items:
+            print("✗ manifest.items 必须是非空数组")
+            sys.exit(1)
+
+        total = len(items)
+        print("=" * 60)
+        print(f"批量{mode}模式 · {total} 项 · {'并行' if args.parallel else '串行'}")
+        print(f"  参数: aspect_ratio={aspect_ratio}, resolution={resolution}")
+        print(f"  输出: {output_dir}")
+        print("=" * 60)
+
+        if args.parallel:
+            # 并行模式下逐个检查 blocklist 再提交
+            filtered = []
+            results = []
+            for idx, item in enumerate(items, 1):
+                err = validate_item(item)
+                if err:
+                    print(f"\n[{idx}/{total}] ✗ 跳过: {err}")
+                    results.append({"id": item.get("id", "?"), "status": "failed", "stage": "validate"})
+                    continue
+                try:
+                    check_blocklist(item["prompt"], blocklist, context=item.get("id", f"item-{idx}"))
+                except SystemExit:
+                    results.append({"id": item.get("id", "?"), "status": "failed", "stage": "blocklist"})
+                    continue
+                filtered.append(item)
+            results += run_parallel(filtered, output_dir, api_key, mode, aspect_ratio, resolution)
+        else:
+            results = []
+            for idx, item in enumerate(items, 1):
+                err = validate_item(item)
+                if err:
+                    print(f"\n[{idx}/{total}] ✗ 跳过: {err}")
+                    results.append({"id": item.get("id", "?"), "status": "failed", "stage": "validate"})
+                    continue
+                check_blocklist(item["prompt"], blocklist, context=item.get("id", f"item-{idx}"))
+                results.append(process_single_item(item, output_dir, api_key, mode, aspect_ratio, resolution, idx, total))
+
+        # 写运行元数据
+        meta_path = output_dir / "_run_metadata.json"
+        meta_path.write_text(
+            json.dumps({
+                "timestamp": datetime.now().strftime("%Y%m%d-%H%M%S"),
+                "mode": mode,
+                "total": total,
+                "results": results,
+                "params": {"aspect_ratio": aspect_ratio, "resolution": resolution},
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        success_count = sum(1 for r in results if r["status"] == "completed")
+        print()
+        print("=" * 60)
+        print(f"{'✓' if success_count == total else '⚠'} 完成 {success_count}/{total}")
+        print(f"  📁 {output_dir}")
+        print(f"  📋 {meta_path}")
+        print("=" * 60)
+        if success_count < total:
+            sys.exit(1)
+        return
+
+    # 单张模式
+    if not args.mode:
+        print("✗ 单张模式必须指定 --mode generation 或 --mode edit")
+        sys.exit(1)
+
+    if args.prompt:
+        prompt = args.prompt
+    elif args.prompt_file:
+        p = Path(args.prompt_file)
+        if not p.exists():
+            print(f"✗ 文件不存在: {p}")
+            sys.exit(1)
+        prompt = p.read_text(encoding="utf-8")
+    else:
+        print("✗ 必须指定 --prompt、--prompt-file 或 --manifest")
+        sys.exit(1)
+
+    images = None
+    if args.images:
+        images = [u.strip() for u in args.images.split(",") if u.strip()]
+
+    if args.mode == "edit" and not images:
+        print("✗ edit 模式必须通过 --images 提供参考图 URL")
+        sys.exit(1)
+
+    check_blocklist(prompt, blocklist)
+    run_single(args.mode, prompt, images, args.name_tag, output_dir, api_key, args.aspect_ratio, args.resolution)
+
+
+if __name__ == "__main__":
+    main()
