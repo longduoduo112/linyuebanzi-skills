@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 通用图像生成器
-调用 MuleRun Nano Banana 2 API,支持 generation(纯文本生图)和 edit(带参考图修图)两种模式。
+调用 MuleRun / APImart / Atlas Cloud API,支持 generation(纯文本生图)和 edit(带参考图修图)两种模式。
 单张用 CLI 参数,批量用 manifest JSON。
 
 用法:
@@ -21,8 +21,9 @@
     python generate.py --manifest ./batch.json --output-dir ./out --parallel
 
 环境变量:
-    MULERUN_API_KEY  --provider mulerun 时必填
-    APIMART_API_KEY  --provider apimart 时必填
+    MULERUN_API_KEY    --provider mulerun 时必填
+    APIMART_API_KEY    --provider apimart 时必填
+    ATLASCLOUD_API_KEY --provider atlascloud 时必填
 
 Manifest JSON 格式:
     {
@@ -69,6 +70,11 @@ PROVIDERS = {
         "env_var": "APIMART_API_KEY",
         "create_url": "https://api.apimart.ai/v1/images/generations",
         "poll_url": "https://api.apimart.ai/v1/tasks",
+    },
+    "atlascloud": {
+        "env_var": "ATLASCLOUD_API_KEY",
+        "create_url": "https://api.atlascloud.ai/api/v1/model/generateImage",
+        "poll_url": "https://api.atlascloud.ai/api/v1/model/prediction",
     },
 }
 
@@ -120,36 +126,60 @@ def _build_create_payload(provider: str, prompt: str, mode: str, images: list[st
             payload["images"] = images
         return create_url, payload
 
-    # apimart
-    payload = {
-        "model": "gpt-image-2-official",
-        "prompt": prompt,
-        "size": aspect_ratio,
-        "resolution": resolution.lower(),
-        "quality": "high",
-        "n": 1,
+    if provider == "apimart":
+        payload = {
+            "model": "gpt-image-2-official",
+            "prompt": prompt,
+            "size": aspect_ratio,
+            "resolution": resolution.lower(),
+            "quality": "high",
+            "n": 1,
+        }
+        if images:
+            payload["image_urls"] = images
+        return cfg["create_url"], payload
+
+    # atlascloud
+    size_map = {
+        "16:9": "2560x1440",
+        "9:16": "1440x2560",
+        "1:1": "1024x1024",
     }
-    if images:
-        payload["image_urls"] = images
+    size = size_map.get(aspect_ratio, "2560x1440")
+    model = "openai/gpt-image-2/edit" if mode == "edit" else "openai/gpt-image-2/text-to-image"
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "size": size,
+        "quality": "high",
+    }
+    if mode == "edit" and images:
+        payload["images"] = images
     return cfg["create_url"], payload
 
 
 def _parse_task_id(provider: str, resp: dict) -> str | None:
     if provider == "mulerun":
         return resp["body"]["task_info"]["id"]
-    # apimart: {"code":200,"data":[{"task_id":"task_xxx","status":"submitted"}]}
-    data = resp["body"].get("data")
-    if isinstance(data, list) and data:
-        return data[0].get("task_id")
-    return None
+    if provider == "apimart":
+        data = resp["body"].get("data")
+        if isinstance(data, list) and data:
+            return data[0].get("task_id")
+        return None
+    # atlascloud: {"data":{"id":"xxx"}}
+    data = resp["body"].get("data", {})
+    return data.get("id")
 
 
-def _build_poll_url(provider: str, task_id: str) -> str:
+def _build_poll_url(provider: str, task_id: str, mode: str = "generation") -> str:
     cfg = PROVIDERS[provider]
     if provider == "mulerun":
-        return f"{cfg['poll_url']}/{task_id}"
-    # apimart
-    return f"{cfg['poll_url']}/{task_id}?language=zh"
+        path = "edit" if mode == "edit" else "generation"
+        return f"{cfg['poll_url']}/{path}/{task_id}"
+    if provider == "apimart":
+        return f"{cfg['poll_url']}/{task_id}?language=zh"
+    # atlascloud
+    return f"{cfg['poll_url']}/{task_id}"
 
 
 def _parse_poll_status(provider: str, resp: dict) -> tuple[str, dict]:
@@ -163,12 +193,21 @@ def _parse_poll_status(provider: str, resp: dict) -> tuple[str, dict]:
             return "failed", resp["body"]
         return "polling", resp["body"]
 
-    # apimart
+    if provider == "apimart":
+        data = resp["body"].get("data", {})
+        status = data.get("status", "unknown")
+        if status == "completed":
+            return "completed", data
+        if status in ("failed", "cancelled"):
+            return "failed", data
+        return "polling", data
+
+    # atlascloud: resp["data"]["status"] = processing/completed/succeeded/failed
     data = resp["body"].get("data", {})
     status = data.get("status", "unknown")
-    if status == "completed":
+    if status in ("completed", "succeeded"):
         return "completed", data
-    if status in ("failed", "cancelled"):
+    if status in ("failed", "error"):
         return "failed", data
     return "polling", data
 
@@ -178,14 +217,18 @@ def _extract_images(provider: str, poll_body: dict) -> list[str]:
     if provider == "mulerun":
         return poll_body.get("images", [])
 
-    # apimart: data.result.images[].url[]
-    result = poll_body.get("result", {})
-    image_items = result.get("images", [])
-    urls = []
-    for item in image_items:
-        item_urls = item.get("url", [])
-        urls.extend(item_urls)
-    return urls
+    if provider == "apimart":
+        result = poll_body.get("result", {})
+        image_items = result.get("images", [])
+        urls = []
+        for item in image_items:
+            item_urls = item.get("url", [])
+            urls.extend(item_urls)
+        return urls
+
+    # atlascloud: data.outputs[0] is a URL string
+    outputs = poll_body.get("outputs", [])
+    return [u for u in outputs if isinstance(u, str) and u.startswith("http")]
 
 
 def create_task(prompt: str, api_key: str, mode: str, images: list[str] | None = None,
@@ -208,7 +251,7 @@ def create_task(prompt: str, api_key: str, mode: str, images: list[str] | None =
 
 def poll_task(task_id: str, api_key: str, mode: str,
               provider: str = DEFAULT_PROVIDER) -> dict | None:
-    url = _build_poll_url(provider, task_id)
+    url = _build_poll_url(provider, task_id, mode)
     headers = {"Authorization": f"Bearer {api_key}"}
 
     for i in range(POLL_MAX_TIMES):
@@ -492,9 +535,9 @@ def run_single(mode: str, prompt: str, images: list[str] | None, name_tag: str,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="通用图像生成器 (MuleRun / APImart)")
+    parser = argparse.ArgumentParser(description="通用图像生成器 (MuleRun / APImart / Atlas Cloud)")
 
-    parser.add_argument("--provider", choices=["mulerun", "apimart"], default=DEFAULT_PROVIDER,
+    parser.add_argument("--provider", choices=["mulerun", "apimart", "atlascloud"], default=DEFAULT_PROVIDER,
                         help=f"API 提供商(默认 {DEFAULT_PROVIDER})")
     parser.add_argument("--mode", choices=["generation", "edit"], help="生成模式: generation(纯文本生图) 或 edit(带参考图)")
     prompt_src = parser.add_mutually_exclusive_group()
@@ -514,9 +557,14 @@ def main():
     provider = args.provider
     has_mulerun = bool(os.environ.get("MULERUN_API_KEY"))
     has_apimart = bool(os.environ.get("APIMART_API_KEY"))
-    if args.provider == DEFAULT_PROVIDER and not has_mulerun and has_apimart:
-        provider = "apimart"
-        print(f"  自动检测: APIMART_API_KEY 已设置,切换到 apimart")
+    has_atlascloud = bool(os.environ.get("ATLASCLOUD_API_KEY"))
+    if args.provider == DEFAULT_PROVIDER and not has_mulerun:
+        if has_apimart:
+            provider = "apimart"
+            print(f"  自动检测: APIMART_API_KEY 已设置,切换到 apimart")
+        elif has_atlascloud:
+            provider = "atlascloud"
+            print(f"  自动检测: ATLASCLOUD_API_KEY 已设置,切换到 atlascloud")
 
     # 加载 blocklist
     blocklist = load_blocklist(args.blocklist)

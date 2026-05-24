@@ -24,12 +24,13 @@
 
 ### `linyuebanzi-image-gen` · 通用图像生成
 
-支持两种生图 API 的执行层，通过 `--provider` 切换：
+支持三种生图 API 的执行层，通过 `--provider` 切换：
 
-| Provider | 参数 | 环境变量 | 模型 |
-|---|---|---|---|
-| MuleRun | `--provider mulerun`（默认） | `MULERUN_API_KEY` | Nano Banana 2 |
-| APImart | `--provider apimart` | `APIMART_API_KEY` | GPT Image 2 |
+| Provider | 参数 | 环境变量 | 模型 | 注册 |
+|---|---|---|---|---|
+| MuleRun | `--provider mulerun`（默认） | `MULERUN_API_KEY` | Nano Banana 2 | |
+| APImart | `--provider apimart` | `APIMART_API_KEY` | GPT Image 2 | [注册](https://apimart.ai/register?aff=llWA) |
+| Atlas Cloud | `--provider atlascloud` | `ATLASCLOUD_API_KEY` | GPT Image 2 | [注册](https://www.atlascloud.ai?ref=LJDEMT) |
 
 支持纯文本生图（generation）和带参考图修图（edit）两种模式，单张和批量执行。被其他 skill 调用的基础设施，不直接面向终端用户。
 
@@ -63,7 +64,7 @@ npx skills add lqshow/linyuebanzi-skills --list
 "来张专业信息图风格的"
 ```
 
-需要设置对应的环境变量：`MULERUN_API_KEY` 或 `APIMART_API_KEY`。只设一个就会自动检测，不需要额外传参。
+需要设置对应的环境变量：`MULERUN_API_KEY`、`APIMART_API_KEY` 或 `ATLASCLOUD_API_KEY`。只设一个就会自动检测，不需要额外传参。
 
 ## 项目结构
 

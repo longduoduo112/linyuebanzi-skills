@@ -166,12 +166,13 @@ diagrams/20260421-143000/
 
 ## 环境变量
 
-生图脚本 `linyuebanzi-image-gen` 支持两种生图 API,根据环境变量自动检测:
+生图脚本 `linyuebanzi-image-gen` 支持三种生图 API,根据环境变量自动检测:
 
 - `MULERUN_API_KEY` —— MuleRun Nano Banana 2
 - `APIMART_API_KEY` —— APImart GPT Image 2
+- `ATLASCLOUD_API_KEY` —— Atlas Cloud GPT Image 2
 
-只设一个就会自动用对应的 API,不需要额外传参。两个都设了默认走 MuleRun。
+只设一个就会自动用对应的 API,不需要额外传参。多个都设了默认走 MuleRun。
 
 ## 常见问题
 
