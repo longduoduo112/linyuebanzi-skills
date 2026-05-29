@@ -73,6 +73,18 @@ def validate_item(item: dict) -> Optional[str]:
     return None
 
 
+def resolve_item_mode(item: dict, manifest_mode: str) -> str:
+    """Resolve the effective mode for an item.
+
+    When manifest_mode is "mixed" (used by cartoon-infographic style),
+    each item may specify its own mode via the "mode" field.
+    Otherwise, all items use the manifest's top-level mode.
+    """
+    if manifest_mode == "mixed":
+        return item.get("mode", "generation")
+    return manifest_mode
+
+
 def load_blocklist(blocklist_path: Optional[str]) -> Optional[list[str]]:
     if not blocklist_path:
         return None
@@ -178,7 +190,7 @@ def _download_item(iid: str, item: dict, poll_result: Optional[dict],
     return {"id": iid, "status": "completed", "image_urls": images, "local_images": image_paths, "task_id": task_id}
 
 
-def run_parallel(items: list, output_dir: Path, provider, mode: str,
+def run_parallel(items: list, output_dir: Path, provider, manifest_mode: str,
                  aspect_ratio: str, resolution: str) -> list:
     total = len(items)
     print(f"\n{'='*60}")
@@ -194,8 +206,9 @@ def run_parallel(items: list, output_dir: Path, provider, mode: str,
             continue
 
         item_id = item["id"]
-        print(f"  [{idx}/{total}] {item_id} → 创建任务")
-        task_id = provider.create_task(item["prompt"], mode, item.get("images"), aspect_ratio, resolution)
+        item_mode = resolve_item_mode(item, manifest_mode)
+        print(f"  [{idx}/{total}] {item_id} → 创建任务 ({item_mode})")
+        task_id = provider.create_task(item["prompt"], item_mode, item.get("images"), aspect_ratio, resolution)
         if not task_id:
             task_entries.append((item_id, item, None, "create"))
         else:
@@ -208,7 +221,9 @@ def run_parallel(items: list, output_dir: Path, provider, mode: str,
         futures = {}
         for iid, _, tid, _ in task_entries:
             if tid:
-                futures[executor.submit(provider.poll_task, tid, mode)] = iid
+                item = next(e[1] for e in task_entries if e[0] == iid)
+                poll_mode = resolve_item_mode(item, manifest_mode)
+                futures[executor.submit(provider.poll_task, tid, poll_mode)] = iid
         for future in as_completed(futures):
             iid = futures[future]
             try:
@@ -364,7 +379,7 @@ def main():
             print(f"✗ manifest JSON 解析失败: {e}")
             sys.exit(1)
 
-        mode = manifest.get("mode", "generation")
+        manifest_mode = manifest.get("mode", "generation")
         aspect_ratio = manifest.get("aspect_ratio", args.aspect_ratio)
         resolution = manifest.get("resolution", args.resolution)
         items = manifest.get("items", [])
@@ -375,7 +390,7 @@ def main():
 
         total = len(items)
         print("=" * 60)
-        print(f"批量{mode}模式 · {total} 项 · {'并行' if args.parallel else '串行'} · provider={provider_name}")
+        print(f"批量{manifest_mode}模式 · {total} 项 · {'并行' if args.parallel else '串行'} · provider={provider_name}")
         print(f"  参数: aspect_ratio={aspect_ratio}, resolution={resolution}")
         print(f"  输出: {output_dir}")
         print("=" * 60)
@@ -395,7 +410,7 @@ def main():
                     results.append({"id": item.get("id", "?"), "status": "failed", "stage": "blocklist"})
                     continue
                 filtered.append(item)
-            results += run_parallel(filtered, output_dir, provider, mode, aspect_ratio, resolution)
+            results += run_parallel(filtered, output_dir, provider, manifest_mode, aspect_ratio, resolution)
         else:
             results = []
             for idx, item in enumerate(items, 1):
@@ -405,7 +420,8 @@ def main():
                     results.append({"id": item.get("id", "?"), "status": "failed", "stage": "validate"})
                     continue
                 check_blocklist(item["prompt"], blocklist, context=item.get("id", f"item-{idx}"))
-                results.append(process_single_item(item, output_dir, provider, mode, aspect_ratio, resolution, idx, total))
+                item_mode = resolve_item_mode(item, manifest_mode)
+                results.append(process_single_item(item, output_dir, provider, item_mode, aspect_ratio, resolution, idx, total))
 
         # 写运行元数据
         meta_path = output_dir / "_run_metadata.json"
@@ -413,7 +429,7 @@ def main():
             json.dumps({
                 "timestamp": datetime.now().strftime("%Y%m%d-%H%M%S"),
                 "provider": provider_name,
-                "mode": mode,
+                "mode": manifest_mode,
                 "total": total,
                 "results": results,
                 "params": {"aspect_ratio": aspect_ratio, "resolution": resolution},
