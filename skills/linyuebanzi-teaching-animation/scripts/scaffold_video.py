@@ -59,10 +59,12 @@ PALETTES = {
         "ink": "#232A22", "neutral": "#857A6A", "soft": "#FCFDF9",
         "line": "#B5AB9B", "bg": "#FAFCF5", "series": "#857A6A",
     },
+    # math 走莫兰迪低饱和变体 (米白暖底 + 雾紫 + 灰灰蓝中性 + 焦糖点缀), 已渲染验证。
+    # 低饱和只给数学/人文向主题; 物理类 (sound/electricity/...) 保持高饱和强调, 波形/电流需要能量感。
     "math": {
-        "primary": "#6D28A8", "accent": "#F4A300", "highlight": "#FFD166",
-        "ink": "#2A2622", "neutral": "#8A7D6B", "soft": "#FDFCFA",
-        "line": "#BCB2A2", "bg": "#FAFAF7", "series": "#8A7D6B",
+        "primary": "#7A6296", "accent": "#B98A5C", "highlight": "#D8D1E6",
+        "ink": "#433D50", "neutral": "#6B7889", "soft": "#FCFAF6",
+        "line": "#B9C2CE", "bg": "#F7F3ED", "series": "#6B7889",
     },
 }
 
