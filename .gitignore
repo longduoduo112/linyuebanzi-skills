@@ -56,3 +56,22 @@ htmlcov/
 
 # pyenv
 # .python-version
+### Claude Code 本地配置 / 工具缓存
+.claude/
+.understand-anything/
+
+### Skill 运行时产物 (生成的封面图等, 需要保留单张时 git add -f)
+skills/covers/
+
+### teaching-animation 可再生的构建产物
+# 成片/动图: 跑 render.sh / build_video.sh 可重出
+skills/linyuebanzi-teaching-animation/examples/**/renders/
+skills/linyuebanzi-teaching-animation/examples/outputs/
+# TTS 音频: 跑 minimax_tts.py 可重出 (durations.json 保留, 是时间轴参考)
+skills/linyuebanzi-teaching-animation/examples/**/audio/*.mp3
+# Manim 渲染缓存 / 蒙太奇临时帧
+skills/linyuebanzi-teaching-animation/**/media/
+skills/linyuebanzi-teaching-animation/**/preview/.frames/
+# 测试运行的示例项目 (canonical 示例只保留 sound-video / sound_phenomena.py)
+skills/linyuebanzi-teaching-animation/examples/ohms-law-video/
+skills/linyuebanzi-teaching-animation/examples/pythagorean-video/
