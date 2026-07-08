@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-composition-variables='[{"id":"mode","type":"enum","label":"输出模式","default":"video","options":[{"value":"video","label":"视频(带配音字幕)"},{"value":"silent","label":"无声MP4(循环)"}]}]'>
 <!--
   声现象 · 教学视频 (基于 assets/video-template/index.html)
   时间轴来自 audio/durations.json (先跑 scripts/minimax_tts.py 再改本文件)
@@ -449,8 +449,13 @@
     window.__timelines = window.__timelines || {};
     const tl = gsap.timeline({ paused: true });
 
-    /* ==== 时间轴 (audio/durations.json) ==== */
-    const SEGMENTS = [
+    /* ==== 输出模式: video(带配音字幕) / gif(无声循环紧凑) ==== */
+    const MODE = (window.__hyperframes && window.__hyperframes.getVariables
+      ? window.__hyperframes.getVariables().mode : null) || "video";
+    const SILENT_SEG = 4.6;   // 无声模式每段时长 (无旁白, 只需看清画面+动效)
+
+    /* ==== 时间轴 (video: audio/durations.json 驱动) ==== */
+    const SEGMENTS_VIDEO = [
       { sel: "#s1", start: 0.0,   duration: 13.02, transition: "blur-crossfade",
         subtitle: "同学们，你有没有想过，我们每天听到的各种声音，是怎么产生、又是怎么传到耳朵里的？今天我们就来揭开声现象的秘密。" },
       { sel: "#s2", start: 13.02, duration: 14.04, transition: "blur-crossfade",
@@ -466,6 +471,12 @@
       { sel: "#s7", start: 82.75, duration: 14.34, transition: "blur-crossfade",
         subtitle: "最后记住这个数字：在十五摄氏度的空气里，声音每秒能跑三百四十米。振动产生声音，介质传播声音，这就是声现象的全部秘密。" },
     ];
+
+    // 无声模式: 每段等长紧凑重排; 视频模式沿用音频驱动时间轴
+    let _acc = 0;
+    const SEGMENTS = MODE === "silent"
+      ? SEGMENTS_VIDEO.map((s) => { const o = { ...s, start: _acc, duration: SILENT_SEG }; _acc += SILENT_SEG; return o; })
+      : SEGMENTS_VIDEO;
 
     /* ==== 波形生成 + 描边入场 + 相位流动 helper (对应 Manim 的 wave_path) ====
        flow:true 时多生成一个波长, 供 flowWave() 无缝滚动 */
@@ -618,17 +629,20 @@
         { y: 0, opacity: 1, duration: 0.5, ease: "power2.out", stagger: 0.12 }, t + 2.4);
       // 环境: 大数字轻呼吸 (挂内层 span, 入场 scale 在外层 div)
       tl.to("#s7-number-inner", { scale: 1.03, transformOrigin: "50% 50%", yoyo: true, repeat: 7, duration: 0.8, ease: "sine.inOut" }, t + 1.4);
-      // 收尾淡出 (仅最后一段允许)
-      const end = t + SEGMENTS[6].duration;
-      tl.to("#s7 .scene-content, #s7 .section-chip, #chapter", { opacity: 0, duration: 0.6, ease: "power1.in" }, end - 0.7);
+      // 收尾淡出 (仅视频模式; 无声循环不淡出, 保证首尾衔接)
+      if (MODE !== "silent") {
+        const end = t + SEGMENTS[6].duration;
+        tl.to("#s7 .scene-content, #s7 .section-chip, #chapter", { opacity: 0, duration: 0.6, ease: "power1.in" }, end - 0.7);
+      }
     }
     const SCENE_BUILDERS = [scene1, scene2, scene3, scene4, scene5, scene6, scene7];
 
     /* ================================================================
        通用引擎 (与模板一致)
        ================================================================ */
+    // 字幕: 仅视频模式生成 (GIF 无声, 不要字幕)
     const subLayer = document.getElementById("subtitle-layer");
-    SEGMENTS.forEach((seg, i) => {
+    if (MODE !== "silent") SEGMENTS.forEach((seg, i) => {
       const div = document.createElement("div");
       div.className = "subtitle";
       div.id = "sub-" + (i + 1);

@@ -1,7 +1,7 @@
 # 分镜脚本指南 (storyboard.json)
 
 > 两条管线共用的第一步: 概念 → 7 段分镜。
-> Manim 动图直接按分镜写 `<topic>.py`; 教学视频先按分镜跑 TTS, 再写 `index.html`。
+> 配音视频和无声动图共用同一份分镜和同一个 `index.html`: 先按分镜跑 TTS, 再生成 `index.html`。
 > **同一概念先写一份 storyboard, 再分别产出**, 保证 GIF 和视频的知识点拆解、配色、结构完全一致。
 
 ## 7 段结构 (锁定)
@@ -17,7 +17,7 @@
 - 子概念按教材逻辑排序 (是什么 → 怎么传 → 有什么特性 → 怎么用), 不按趣味排序
 - 每段只讲一个点, 讲不完就砍内容, 不要压缩语速
 - 有具体数字就用具体数字 (声速 340 m/s、光速 3×10⁸ m/s), 数字是记忆锚点
-- 拆解要对着教材知识点走, 参考 `examples/sound_phenomena.py` 的结构:
+- 拆解要对着教材知识点走, 参考 `examples/sound-video/storyboard.json` 的结构:
   振动发声 → 声波传播 → 音调 → 响度 → 音色 → 声速与总结
 
 ## storyboard.json 格式
@@ -44,7 +44,7 @@
 
 字段说明:
 - `palette`: 对应 `references/color-palettes.md` 里的主题族 (sound/light/mechanics/electricity/heat/biology/math)
-- `visual`: 画面描述, 要具体到"左边什么示意图、右边什么卡片、什么东西动"; 这段文字就是写 Manim 场景 / HTML 场景的依据
+- `visual`: 画面描述, 要具体到"左边什么示意图、右边什么卡片、什么东西动"; 这段文字就是写 HTML 场景的依据
 - `transition`: 该段**结束时**的转场; `blur-crossfade` (默认, 平缓) / `push-up` (推进感, 用在进入总结段等转折处), 全片 push 不超过 2 次
 - `min_duration`: 可选, 画面复杂时保底时长 (默认 5s)
 

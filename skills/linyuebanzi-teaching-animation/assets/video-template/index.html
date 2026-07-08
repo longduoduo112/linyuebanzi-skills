@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-composition-variables='[{"id":"mode","type":"enum","label":"输出模式","default":"video","options":[{"value":"video","label":"视频(带配音字幕)"},{"value":"silent","label":"无声MP4(循环)"}]}]'>
 <!--
   教学视频 通用模板 (HyperFrames)
   ================================
@@ -307,12 +307,22 @@
     window.__timelines = window.__timelines || {};
     const tl = gsap.timeline({ paused: true });
 
+    /* ==== 输出模式: video(带配音字幕) / silent(无声循环紧凑) ==== */
+    const MODE = (window.__hyperframes && window.__hyperframes.getVariables
+      ? window.__hyperframes.getVariables().mode : null) || "video";
+    const SILENT_SEG = 4.6;   // 无声模式每段时长 (无旁白, 只需看清画面+动效)
+
     /* ==== 时间轴: 从 audio/durations.json 的 segments 原样抄 ==== */
-    const SEGMENTS = [
+    const SEGMENTS_VIDEO = [
       { sel: "#s1", start: 0.0, duration: 6.3, transition: "blur-crossfade", subtitle: "旁白第一句…" },
       // { sel: "#s2", start: 6.3, duration: 9.1, transition: "blur-crossfade", subtitle: "…" },
       // …7 段
     ];
+    // 无声模式: 每段等长紧凑重排; 视频模式沿用音频驱动时间轴
+    let _acc = 0;
+    const SEGMENTS = MODE === "silent"
+      ? SEGMENTS_VIDEO.map((s) => { const o = { ...s, start: _acc, duration: SILENT_SEG }; _acc += SILENT_SEG; return o; })
+      : SEGMENTS_VIDEO;
 
     /* ==== 每场景入场编排: 时间一律 t + 偏移, t = 该段 start ==== */
     /* 规则: fromTo 而非 from; 每场景 ≥3 种 ease; 入场方向要变化; 不写退场 */
@@ -334,9 +344,11 @@
     function scene5(t) {}
     function scene6(t) {}
     function scene7(t) {
-      // 最后一段允许收尾淡出:
-      // const end = SEGMENTS[6].start + SEGMENTS[6].duration;
-      // tl.to("#s7 .scene-content, #chapter", { opacity: 0, duration: 0.6, ease: "power1.in" }, end - 0.7);
+      // 最后一段允许收尾淡出 (仅视频模式; 无声循环不淡出, 保证首尾衔接):
+      // if (MODE !== "silent") {
+      //   const end = SEGMENTS[6].start + SEGMENTS[6].duration;
+      //   tl.to("#s7 .scene-content, #chapter", { opacity: 0, duration: 0.6, ease: "power1.in" }, end - 0.7);
+      // }
     }
     const SCENE_BUILDERS = [scene1, scene2, scene3, scene4, scene5, scene6, scene7];
 
@@ -390,9 +402,9 @@
     /* ================================================================
        以下为通用引擎, 一般不用改
        ================================================================ */
-    // 字幕: 由 SEGMENTS 生成, 与旁白同步
+    // 字幕: 由 SEGMENTS 生成, 与旁白同步 (无声模式不生成字幕)
     const subLayer = document.getElementById("subtitle-layer");
-    SEGMENTS.forEach((seg, i) => {
+    if (MODE !== "silent") SEGMENTS.forEach((seg, i) => {
       const div = document.createElement("div");
       div.className = "subtitle";
       div.id = "sub-" + (i + 1);

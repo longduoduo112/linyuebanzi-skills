@@ -80,6 +80,13 @@ def extract(src, start, end):
     return src[i:src.index(end, i)]
 
 
+# 输出模式变量声明 (放 <html> 上): video=带配音字幕完整版 / silent=无声循环紧凑版
+COMPOSITION_VARS = ('''data-composition-variables='['''
+                    '''{"id":"mode","type":"enum","label":"输出模式","default":"video","options":['''
+                    '''{"value":"video","label":"视频(带配音字幕)"},'''
+                    '''{"value":"silent","label":"无声MP4(循环)"}]}]' ''')
+
+
 def build_root_css(palette):
     lines = "\n".join(f"      --{k}:   {v};" for k, v in palette.items())
     return ":root {\n" + lines + "\n    }"
@@ -215,7 +222,18 @@ def main():
         seg_lines.append(
             f'      {{ sel: "#s{i}", start: {s["start"]}, duration: {s["duration"]}, '
             f'transition: "{trans}",\n        subtitle: {json.dumps(s["subtitle"], ensure_ascii=False)} }},')
-    segments_js = "const SEGMENTS = [\n" + "\n".join(seg_lines) + "\n    ];"
+    segments_js = (
+        '// 输出模式: video(带配音字幕) / silent(无声循环紧凑)\n'
+        '    const MODE = (window.__hyperframes && window.__hyperframes.getVariables\n'
+        '      ? window.__hyperframes.getVariables().mode : null) || "video";\n'
+        '    const SILENT_SEG = 4.6;   // 无声模式每段时长 (无旁白, 只需看清画面+动效)\n\n'
+        '    const SEGMENTS_VIDEO = [\n' + "\n".join(seg_lines) + "\n    ];\n\n"
+        '    // 无声模式: 每段等长紧凑重排; 视频模式沿用音频驱动时间轴\n'
+        '    let _acc = 0;\n'
+        '    const SEGMENTS = MODE === "silent"\n'
+        '      ? SEGMENTS_VIDEO.map((s) => { const o = { ...s, start: _acc, duration: SILENT_SEG }; _acc += SILENT_SEG; return o; })\n'
+        '      : SEGMENTS_VIDEO;'
+    )
 
     # ---- 场景编排桩 (s1/s7 标准编排预填, s2-6 留桩) ----
     builders = ['''    function scene1(t) {
@@ -244,13 +262,16 @@ def main():
       tl.fromTo("#s7-bar .badge", { y: 44, opacity: 0 },
         { y: 0, opacity: 1, duration: 0.5, ease: "power2.out", stagger: 0.12 }, t + 2.4);
       tl.to("#s7-number-inner", { scale: 1.03, transformOrigin: "50% 50%", yoyo: true, repeat: 7, duration: 0.8, ease: "sine.inOut" }, t + 1.4);
-      const end = t + SEGMENTS[6].duration;
-      tl.to("#s7 .scene-content, #s7 .section-chip, #chapter", { opacity: 0, duration: 0.6, ease: "power1.in" }, end - 0.7);
+      // 收尾淡出 (仅视频模式; 无声循环不淡出, 保证首尾衔接)
+      if (MODE !== "silent") {
+        const end = t + SEGMENTS[6].duration;
+        tl.to("#s7 .scene-content, #s7 .section-chip, #chapter", { opacity: 0, duration: 0.6, ease: "power1.in" }, end - 0.7);
+      }
     }''')
     builders_js = "\n".join(builders)
 
     html = f'''<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" {COMPOSITION_VARS}>
 <!--
   {topic} · 教学视频 (由 scaffold_video.py 生成, 模板: assets/video-template/index.html)
   时间轴已按 audio/durations.json 填好 — 只需填 TODO 的场景内容和 scene2()-scene6() 编排

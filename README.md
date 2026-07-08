@@ -38,17 +38,17 @@
 
 ### `linyuebanzi-teaching-animation` · 教学动图 + 配音教学视频
 
-`linyuebanzi-edu-infographic` 的动态版。输入一个学科概念（如「声现象」「欧姆定律」「勾股定理」），双管线产出：
+`linyuebanzi-edu-infographic` 的动态版。输入一个学科概念（如「声现象」「欧姆定律」「勾股定理」），两种动态产出（都由 HyperFrames 渲染，共用同一个 `index.html`，靠 `mode` 变量切换）：
 
-| 管线 | 产物 | 工具链 |
+| 产出 | 规格 | 用途 |
 |---|---|---|
-| **动图** | MP4 (1080p60) + GIF (720p, <2MB, 适合公众号内嵌自动播放) | Manim Community |
-| **视频** | 带中文配音 + 字幕的完整 MP4 (1920×1080) | Minimax TTS + HyperFrames |
+| **配音视频** | 1080p、~90s、中文旁白 + 字幕 | 完整讲解，发视频号 / 给孩子看 |
+| **无声动图** | 1080p、~32s、无声、循环 | 公众号正文内嵌自动播放 |
 
-两条管线共用一份 7 段分镜（1 标题 + 5 子概念 + 1 总结）和同一套主题配色，GIF 和视频风格统一。配色按学科主题自动匹配（声/光/力/电/热/生物/数学 7 套，60-30-10 分层 + 冷暖对比），标题公式用宋体、正文用黑体，自带纸张颗粒质感和波形流动等物理正确的持续动效。
+两种产出共用一份 7 段分镜（1 标题 + 5 子概念 + 1 总结）和同一套主题配色，视频和动图风格完全统一。配色按学科主题自动匹配（声/光/力/电/热/生物/数学 7 套，60-30-10 分层 + 冷暖对比），标题公式用宋体、正文用黑体，自带纸张颗粒质感和波形流动等物理正确的持续动效。无声动图是视频画面的紧凑循环版，1080p 完整只有 8~10MB，比 GIF 清晰得多。
 
 - **输入**: 学科概念名称（可含学段，默认初二）
-- **输出**: MP4 + GIF + 带配音视频 + 7 场景蒙太奇预览
+- **输出**: 配音视频 MP4 + 无声循环 MP4 + 7 场景蒙太奇预览
 
 不同主题示例：
 
@@ -112,7 +112,7 @@ npx skills add lqshow/linyuebanzi-skills --list
 - 图片类 skill：`MULERUN_API_KEY`、`APIMART_API_KEY` 或 `ATLASCLOUD_API_KEY`（只设一个就会自动检测）
 - 教学视频配音：`MINIMAX_API_KEY`（Minimax T2A v2，部分账号还需 `MINIMAX_GROUP_ID`）
 
-教学动图/视频的本地依赖：Python 3 + Manim Community + ffmpeg（动图）；Node.js ≥22（视频，HyperFrames 通过 `npx` 自动获取）。
+教学视频/动图的本地依赖：Node.js ≥22 + ffmpeg（HyperFrames 通过 `npx` 自动获取）。
 
 ## 项目结构
 
@@ -136,19 +136,18 @@ linyuebanzi-skills/
 │   │       ├── illustration_guide.md        # 各知识点插图指引
 │   │       ├── accuracy_checklist.md        # 分学科准确性检查清单
 │   │       └── errata.md                    # 知识勘误表
-│   ├── linyuebanzi-teaching-animation/      # 教学动图 + 配音视频 skill
-│   │   ├── SKILL.md                         # 入口定义（双管线路由）
+│   ├── linyuebanzi-teaching-animation/      # 配音视频 + 无声动图 skill
+│   │   ├── SKILL.md                         # 入口定义（措辞路由）
 │   │   ├── assets/
-│   │   │   ├── template.py                  # Manim v2 模板（全部 helper）
-│   │   │   └── video-template/index.html    # HyperFrames 模板（转场/字幕/波形引擎）
+│   │   │   └── video-template/index.html    # HyperFrames 模板（video/silent 双模式引擎）
 │   │   ├── scripts/
-│   │   │   ├── render.sh                    # 动图渲染（GIF 超 2MB 自动降级）
 │   │   │   ├── minimax_tts.py               # Minimax 分段配音 + 时间轴
-│   │   │   ├── scaffold_video.py            # 视频骨架生成器
+│   │   │   ├── scaffold_video.py            # 骨架生成器（含 silent 机制）
 │   │   │   ├── sync_timeline.py             # 重配音后同步时间轴
-│   │   │   └── build_video.sh               # lint + validate + render + 蒙太奇
-│   │   ├── references/                      # 分镜规范、场景配方、SVG 符号库、调色板、坑表
-│   │   └── examples/                        # 声现象完整示例（动图 + 视频）
+│   │   │   ├── build_video.sh               # 配音视频：lint + validate + render + 蒙太奇
+│   │   │   └── build_silent.sh              # 无声循环动图：silent 模式渲染
+│   │   ├── references/                      # 分镜规范、编写规则、SVG 符号库、调色板
+│   │   └── examples/sound-video/            # 声现象完整示例（配音视频 + 无声动图）
 │   └── linyuebanzi-image-gen/               # 通用图像生成 skill
 │       ├── SKILL.md                         # 入口定义
 │       └── scripts/
