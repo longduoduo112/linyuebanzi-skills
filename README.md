@@ -1,6 +1,6 @@
 # 林月半子 · AI 配图技能库
 
-公众号「林月半子的 AI 笔记」的 Claude Code 配图技能集合。自动为技术长文生成概念图、流程图、对比图、架构图，让长文不再单调。
+公众号「林月半子的 AI 笔记」的 Claude Code 配图技能集合。自动为技术长文生成概念图、流程图、对比图、架构图，为学科知识点生成信息图、教学动图和带配音的教学视频。
 
 ## Preview Gallery
 
@@ -35,6 +35,30 @@
 |:---:|:---:|:---:|:---:|
 | ![](./previews/edu-physics.png) | ![](./previews/edu-math.png) | ![](./previews/edu-chemistry.png) | ![](./previews/edu-biology.png) |
 | 物理 · 光现象 | 数学 · 勾股定理 | 化学 · 空气的组成 | 生物 · 光合作用 |
+
+### `linyuebanzi-teaching-animation` · 教学动图 + 配音教学视频
+
+`linyuebanzi-edu-infographic` 的动态版。输入一个学科概念（如「声现象」「欧姆定律」「勾股定理」），双管线产出：
+
+| 管线 | 产物 | 工具链 |
+|---|---|---|
+| **动图** | MP4 (1080p60) + GIF (720p, <2MB, 适合公众号内嵌自动播放) | Manim Community |
+| **视频** | 带中文配音 + 字幕的完整 MP4 (1920×1080) | Minimax TTS + HyperFrames |
+
+两条管线共用一份 7 段分镜（1 标题 + 5 子概念 + 1 总结）和同一套主题配色，GIF 和视频风格统一。配色按学科主题自动匹配（声/光/力/电/热/生物/数学 7 套，60-30-10 分层 + 冷暖对比），标题公式用宋体、正文用黑体，自带纸张颗粒质感和波形流动等物理正确的持续动效。
+
+- **输入**: 学科概念名称（可含学段，默认初二）
+- **输出**: MP4 + GIF + 带配音视频 + 7 场景蒙太奇预览
+
+不同主题示例：
+
+| | | |
+|:---:|:---:|:---:|
+| ![](./previews/teaching-sound.png) | ![](./previews/teaching-electricity.png) | ![](./previews/teaching-math.png) |
+| 物理 · 声现象（暖橙） | 物理 · 欧姆定律（深蓝） | 数学 · 勾股定理（紫） |
+
+https://github.com/user-attachments/assets/8c5b6a7c-3aa7-4e99-b99f-661c999c27cd
+
 
 ### `linyuebanzi-image-gen` · 通用图像生成
 
@@ -76,9 +100,19 @@ npx skills add lqshow/linyuebanzi-skills --list
 # 指定风格
 "用温暖手绘卡片风配图"
 "来张专业信息图风格的"
+
+# 教学动图 / 视频
+"做一个声现象的教学动图"          # → GIF + MP4
+"做一个勾股定理的教学视频"        # → 带配音的完整视频
+"光合作用，动图和视频都要"
 ```
 
-需要设置对应的环境变量：`MULERUN_API_KEY`、`APIMART_API_KEY` 或 `ATLASCLOUD_API_KEY`。只设一个就会自动检测，不需要额外传参。
+需要设置对应的环境变量：
+
+- 图片类 skill：`MULERUN_API_KEY`、`APIMART_API_KEY` 或 `ATLASCLOUD_API_KEY`（只设一个就会自动检测）
+- 教学视频配音：`MINIMAX_API_KEY`（Minimax T2A v2，部分账号还需 `MINIMAX_GROUP_ID`）
+
+教学动图/视频的本地依赖：Python 3 + Manim Community + ffmpeg（动图）；Node.js ≥22（视频，HyperFrames 通过 `npx` 自动获取）。
 
 ## 项目结构
 
@@ -102,6 +136,19 @@ linyuebanzi-skills/
 │   │       ├── illustration_guide.md        # 各知识点插图指引
 │   │       ├── accuracy_checklist.md        # 分学科准确性检查清单
 │   │       └── errata.md                    # 知识勘误表
+│   ├── linyuebanzi-teaching-animation/      # 教学动图 + 配音视频 skill
+│   │   ├── SKILL.md                         # 入口定义（双管线路由）
+│   │   ├── assets/
+│   │   │   ├── template.py                  # Manim v2 模板（全部 helper）
+│   │   │   └── video-template/index.html    # HyperFrames 模板（转场/字幕/波形引擎）
+│   │   ├── scripts/
+│   │   │   ├── render.sh                    # 动图渲染（GIF 超 2MB 自动降级）
+│   │   │   ├── minimax_tts.py               # Minimax 分段配音 + 时间轴
+│   │   │   ├── scaffold_video.py            # 视频骨架生成器
+│   │   │   ├── sync_timeline.py             # 重配音后同步时间轴
+│   │   │   └── build_video.sh               # lint + validate + render + 蒙太奇
+│   │   ├── references/                      # 分镜规范、场景配方、SVG 符号库、调色板、坑表
+│   │   └── examples/                        # 声现象完整示例（动图 + 视频）
 │   └── linyuebanzi-image-gen/               # 通用图像生成 skill
 │       ├── SKILL.md                         # 入口定义
 │       └── scripts/
