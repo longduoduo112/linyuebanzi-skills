@@ -40,6 +40,7 @@ ACCURACY (critical — this is educational material for students):
 - Render ALL Chinese text, formulas, numbers, subscripts and superscripts EXACTLY as written in this prompt — do not paraphrase, translate, drop characters, or invent text
 - Formulas must keep exact structure: e.g. "a² + b² = c²", "I = U/R", "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂" — superscripts/subscripts in the correct position
 - No garbled, malformed, or half-formed Chinese characters
+- Render each sentence and each label EXACTLY ONCE — do NOT repeat a character within a word (e.g. never "倒立的的"), do NOT duplicate a legend label, do NOT echo a word twice
 - Arrow directions, labels and diagram relationships must match the described logic exactly
 ```
 
