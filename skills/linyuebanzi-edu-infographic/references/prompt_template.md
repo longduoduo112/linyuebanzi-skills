@@ -22,16 +22,19 @@ BOTTOM SECTION (pick the most appropriate one):
 
 VISUAL STYLE:
 - Clean educational infographic style — NOT hand-drawn, NOT sketch, NOT notebook grid
-- {theme_color} as primary accent color for: section headers, numbered badges, decorative elements, key terms
-- White or very light tinted background for card interiors
-- Overall poster background: light colored, matching theme but very subtle (not pure white, not dark)
+- Muted, low-saturation Morandi-inspired color palette throughout — soft, powdery, print-like tones, like quality textbook or MUJI stationery design
+- Color system (use these EXACT tones):
+  - Primary accent: {theme_color} — used SPARINGLY, only for section headers, numbered badges, key terms and formula highlights (roughly 10% of the canvas)
+  - Poster background: {bg_tint} — soft tinted paper tone, not pure white, not dark
+  - Neutral: {neutral_color} — for secondary text, structure lines, explanatory labels
+- Card interiors: near-white with a whisper of the background tint
 - Numbered section badges: solid {theme_color} circles with white numbers
-- Illustrations: simple, clear diagrams with labeled parts — NOT photographs, NOT 3D renders
-- Typography: clean sans-serif, Chinese text throughout, large readable headings
+- Illustrations: simple, clear diagrams with labeled parts — NOT photographs, NOT 3D renders; diagram strokes may use the accent and neutral colors
+- Typography: clean sans-serif, Chinese text throughout, large readable headings; serif (Songti-style) acceptable for the main title and formulas
 - Generous whitespace between sections — do NOT cram content
 - Each card visually distinct but stylistically consistent
 - Publication-ready quality for WeChat articles, Xiaohongshu, or print
-- Do NOT use: dark backgrounds, neon colors, glossy effects, heavy shadows, complex 3D visuals, photographic elements
+- Do NOT use: dark backgrounds, neon colors, high-saturation candy colors, pure primary red/blue/yellow, glossy effects, heavy shadows, complex 3D visuals, photographic elements
 
 ACCURACY (critical — this is educational material for students):
 - Render ALL Chinese text, formulas, numbers, subscripts and superscripts EXACTLY as written in this prompt — do not paraphrase, translate, drop characters, or invent text

@@ -37,17 +37,25 @@ npx skills add lqshow/linyuebanzi-skills -s linyuebanzi-image-gen
 
 ### Step 2：确定视觉主题色
 
-根据学科和知识点自动选择主题色，同学科不同章节用不同色系：
+**全线走低饱和（莫兰迪）色调**——不给生图模型"蓝色系"这种粗粒度色名（它会默认输出高饱和的
+"AI 信息图蓝"），而是给**具体色卡**：主色 + 底色 + 中性色各带 hex 锚点。同学科不同章节在
+可选色卡里轮换主色，同一批次不重复。
 
-| 学科 | 可选色系 |
-|------|---------|
-| 物理 | 橙色系、蓝色系、紫色系、青绿色系、红色系 |
-| 化学 | 绿色系、蓝紫色系、橙黄色系 |
-| 生物 | 绿色系、棕色系、蓝绿色系 |
-| 数学 | 蓝色系、橙色系、紫色系 |
-| 语文 | 暖红色系、棕色系、米黄色系 |
-| 历史 | 棕色系、暗红色系、金色系 |
-| 英语 | 蓝色系、绿色系、紫色系 |
+| 色卡 | 主色 (accent) | 底色 (bg tint) | 中性 (neutral) | 适用 |
+|------|--------------|---------------|---------------|------|
+| 陶土橙 | terracotta `#C97E4E` | cream `#F7F1E6` | slate blue-grey `#3A506B` | 物理(声/热)、化学(有机) |
+| 深灰蓝 | slate blue `#3A506B` | misty blue-white `#EDF3F8` | warm grey `#8A7D6B` | 物理(电/力)、英语 |
+| 柔青绿 | muted teal `#4A9E9B` | pale green-white `#EAF1E3` | grey olive `#8E9678` | 物理(光/透镜)、化学 |
+| 雾紫 | misty purple `#7A6296` | ivory `#F7F3ED` | grey blue `#6B7889` | 数学 (与教学视频 math 主题同源) |
+| 深茶绿 | deep tea green `#5F6B4F` | pale green-white `#EAF1E3` | light khaki `#D9C9A3` | 生物 |
+| 焦糖棕 | caramel brown `#8A624A` | cream beige `#F4E6C8` | grey coffee `#6F5F4A` | 语文、历史 |
+| 鼠尾草绿 | sage green `#8FA08A` | oat `#F2EAD9` | grey olive `#8E9678` | 生物(植物)、英语 |
+
+规则：
+- 主色只用在**标题、编号徽章、关键词、公式高亮**上（约 10% 画面），卡片底和背景走底色的浅变体
+- 中性色给次级文字、结构线、说明性标注
+- 禁止高饱和糖果色、霓虹色、纯 `#FF` 系色相
+- 与 `linyuebanzi-teaching-animation` 做同一知识点时，选同源色卡（如勾股定理 → 雾紫），信息图、动图、视频风格统一
 
 ### Step 3：构建提示词
 
@@ -57,7 +65,9 @@ npx skills add lqshow/linyuebanzi-skills -s linyuebanzi-image-gen
 - `{grade}` → 年级
 - `{subject}` → 学科
 - `{chapter}` → 章节
-- `{theme_color}` → 主题色名称
+- `{theme_color}` → 主色（英文名 + hex，取自 Step 2 色卡，如 `misty purple #7A6296`）
+- `{bg_tint}` → 底色（英文名 + hex）
+- `{neutral_color}` → 中性色（英文名 + hex）
 - `{num_sections}` → 子概念数量
 - `{sections_content}` → 各子概念的标题、插图描述、说明文字（从 `references/illustration_guide.md` 中匹配，无匹配则自动生成）
 
