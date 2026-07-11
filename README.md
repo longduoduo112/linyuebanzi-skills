@@ -60,6 +60,26 @@
 https://github.com/user-attachments/assets/8c5b6a7c-3aa7-4e99-b99f-661c999c27cd
 
 
+### `linyuebanzi-video-cover-generator` · 短视频封面生成
+
+根据视频口播文案,为视频号/抖音/小红书短视频生成 3:4 竖版封面图。以 LQ 头像为参考图保持人物一致性,内置 11 种可选视觉风格(默认深色科技标题风),自动提炼"人话"主标题、构建"问题 → 解决"UI 叙事,生成后读图自检(标题逐字核对/表情/水印/层级)。
+
+- **输入**: 视频口播文案(可指定风格)
+- **输出**: 3:4 竖版封面 PNG(1080×1440)
+
+11 种风格(同一主题实测):
+
+| | | |
+|:---:|:---:|:---:|
+| ![](./skills/linyuebanzi-video-cover-generator/assets/previews/01-dark-tech-title.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/02-bright-youtuber.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/03-split-screen-narrative.jpg) |
+| 1 深色科技标题风 · 默认安全牌 | 2 明亮 YouTuber 风 · 科普/破圈 | 3 双屏对比叙事风 · 避坑/报错修复 |
+| ![](./skills/linyuebanzi-video-cover-generator/assets/previews/04-product-hero.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/05-collage-info-storm.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/06-workspace-scene.jpg) |
+| 4 产品主视觉风 · 工具测评 | 5 拼贴信息飓风 · 工作流/多工具 | 6 工作台场景风 · Vlog 式教程 |
+| ![](./skills/linyuebanzi-video-cover-generator/assets/previews/07-glitch-warning.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/08-agent-hype.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/09-card-showcase.jpg) |
+| 7 故障警示风 · Bug 排查/安全提醒 | 8 Agent 号召风 · AI 工具推荐 | 9 卡片展示人设风 · 工具合集 |
+| ![](./skills/linyuebanzi-video-cover-generator/assets/previews/10-cute-mascot.jpg) | ![](./skills/linyuebanzi-video-cover-generator/assets/previews/11-device-showcase.jpg) | |
+| 10 萌宠代码风 · 轻松入门 | 11 手持设备展示风 · 网页/App 展示 | |
+
 ### `linyuebanzi-image-gen` · 通用图像生成
 
 支持三种生图 API 的执行层，通过 `--provider` 切换：
@@ -105,6 +125,10 @@ npx skills add lqshow/linyuebanzi-skills --list
 "做一个声现象的教学动图"          # → GIF + MP4
 "做一个勾股定理的教学视频"        # → 带配音的完整视频
 "光合作用，动图和视频都要"
+
+# 短视频封面（会先让你选风格，默认深色科技标题风）
+"给这个视频做个封面"
+"用萌宠代码风来一张抖音封面"
 ```
 
 需要设置对应的环境变量：
@@ -148,6 +172,14 @@ linyuebanzi-skills/
 │   │   │   └── build_silent.sh              # 无声循环动图：silent 模式渲染
 │   │   ├── references/                      # 分镜规范、编写规则、SVG 符号库、调色板
 │   │   └── examples/sound-video/            # 声现象完整示例（配音视频 + 无声动图）
+│   ├── linyuebanzi-video-cover-generator/   # 短视频封面 skill（3:4 竖版）
+│   │   ├── SKILL.md                         # 入口定义（五步流程 + 读图自检）
+│   │   ├── assets/previews/                 # 11 种风格预览图
+│   │   └── references/                      # 品牌基线、风格目录、案例
+│   │       ├── styles/                      # 11 种风格提示词模板
+│   │       ├── brand_baseline.md            # 品牌基线 + 文字渲染保护规则
+│   │       ├── style_catalog.md             # 风格快速选择表
+│   │       └── examples.md                  # 已验证案例
 │   └── linyuebanzi-image-gen/               # 通用图像生成 skill
 │       ├── SKILL.md                         # 入口定义
 │       └── scripts/
