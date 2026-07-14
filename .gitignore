@@ -75,3 +75,13 @@ skills/linyuebanzi-teaching-animation/**/preview/.frames/
 # 测试运行的示例项目 (canonical 示例只保留 sound-video / sound_phenomena.py)
 skills/linyuebanzi-teaching-animation/examples/ohms-law-video/
 skills/linyuebanzi-teaching-animation/examples/pythagorean-video/
+
+### article-video 可再生的构建产物
+# 成片: 跑 build.sh 可重出
+skills/linyuebanzi-article-video/examples/**/renders/
+# TTS 音频: 跑 tts_pipeline.py 可重出 (timeline.json 保留, 是时间轴参考)
+skills/linyuebanzi-article-video/examples/**/audio/*.mp3
+# 插图: prompt 已存 diagrams-styled.json, 跑 image-gen 可重出 (含 raw/ 去底前备份)
+skills/linyuebanzi-article-video/examples/**/images/
+# 蒙太奇临时帧
+skills/linyuebanzi-article-video/**/preview/.frames/
